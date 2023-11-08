@@ -108,15 +108,17 @@ func NewSession(sessionName string) (*Session, error) {
 func (self *Session) Process(cb EventCallback) error {
 	self.mu.Lock()
 	self.callback = cb
-	config := self.config
+	hSession := self.hSession
+	config := []SessionOptions{}
+	copy(config, self.config)
 	self.mu.Unlock()
 
-	if config == nil {
+	if config == nil || len(config) == 0 {
 		return fmt.Errorf("no providers to subscribe to;")
 	}
 
 	for _, cfg := range config {
-		if err := self.subscribeToProvider(cfg); err != nil {
+		if err := self.subscribeToProvider(cfg, hSession); err != nil {
 			return fmt.Errorf("failed to subscribe to provider; %w", err)
 		}
 	}
@@ -136,6 +138,7 @@ func (self *Session) Process(cb EventCallback) error {
 // recreate a session with new desired name.
 func (self *Session) UpdateOptions(providerGUID windows.GUID, options ...Option) error {
 	self.mu.Lock()
+	hSession := self.hSession
 	defer self.mu.Unlock()
 	for i, cfg := range self.config {
 		if cfg.Guid == providerGUID {
@@ -144,7 +147,7 @@ func (self *Session) UpdateOptions(providerGUID windows.GUID, options ...Option)
 			}
 			self.config[i] = cfg
 
-			if err := self.subscribeToProvider(cfg); err != nil {
+			if err := self.subscribeToProvider(cfg, hSession); err != nil {
 				return fmt.Errorf("failed to enable provider; %w", err)
 			}
 			return nil
@@ -158,7 +161,7 @@ func (self *Session) UpdateOptions(providerGUID windows.GUID, options ...Option)
 	cfg.Guid = providerGUID
 	self.config = append(self.config, cfg)
 
-	if err := self.subscribeToProvider(cfg); err != nil {
+	if err := self.subscribeToProvider(cfg, hSession); err != nil {
 		return err
 	}
 	return nil
@@ -273,8 +276,7 @@ func (self *Session) createETWSession() error {
 }
 
 // subscribeToProvider wraps EnableTraceEx2 with EVENT_CONTROL_CODE_ENABLE_PROVIDER.
-func (self *Session) subscribeToProvider(config SessionOptions) error {
-	session := self
+func (self *Session) subscribeToProvider(config SessionOptions, hSession C.ULONGLONG) error {
 	// https://docs.microsoft.com/en-us/windows/win32/etw/configuring-and-starting-an-event-tracing-session
 	params := C.ENABLE_TRACE_PARAMETERS{
 		Version: 2, // ENABLE_TRACE_PARAMETERS_VERSION_2
@@ -296,7 +298,7 @@ func (self *Session) subscribeToProvider(config SessionOptions) error {
 	//
 	// Ref: https://docs.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-enabletraceex2
 	ret := C.EnableTraceEx2(
-		session.hSession,
+		hSession,
 		(*C.GUID)(unsafe.Pointer(&config.Guid)),
 		C.EVENT_CONTROL_CODE_ENABLE_PROVIDER,
 		C.UCHAR(config.Level),
@@ -314,8 +316,6 @@ func (self *Session) subscribeToProvider(config SessionOptions) error {
 
 // unsubscribeFromProvider wraps EnableTraceEx2 with EVENT_CONTROL_CODE_DISABLE_PROVIDER.
 func (self *Session) unsubscribeFromProvider(cfg SessionOptions) error {
-	self.mu.Lock()
-	defer self.mu.Unlock()
 	// ULONG WMIAPI EnableTraceEx2(
 	//	TRACEHANDLE              TraceHandle,
 	//	LPCGUID                  ProviderId,
