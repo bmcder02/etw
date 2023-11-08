@@ -516,7 +516,9 @@ func stampToTime(quadPart C.LONGLONG) time.Time {
 // with a following slicing.
 // Ref: https://github.com/golang/go/wiki/cgo#turning-c-arrays-into-go-slices
 func createUTF16String(ptr uintptr, len int) string {
-	if !AllowKernelAccess {
+	// Race detector doesn't like this cast, but it's safe.
+	// ptr is represented as a kernel address > 0xC0'0000'0000
+	if !AllowKernelAccess && ptr > 0x7FFFFFFFFF {
 		return ""
 	}
 	if len == 0 {

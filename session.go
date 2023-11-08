@@ -121,10 +121,8 @@ func (self *Session) Process(cb EventCallback) error {
 		}
 	}
 
-	self.mu.Lock()
 	cgoKey := newCallbackKey(self)
 	defer freeCallbackKey(cgoKey)
-	self.mu.Unlock()
 
 	// Will block here until being closed.
 	if err := self.processEvents(cgoKey); err != nil {
@@ -276,9 +274,7 @@ func (self *Session) createETWSession() error {
 
 // subscribeToProvider wraps EnableTraceEx2 with EVENT_CONTROL_CODE_ENABLE_PROVIDER.
 func (self *Session) subscribeToProvider(config SessionOptions) error {
-	self.mu.Lock()
 	session := self
-	defer self.mu.Unlock()
 	// https://docs.microsoft.com/en-us/windows/win32/etw/configuring-and-starting-an-event-tracing-session
 	params := C.ENABLE_TRACE_PARAMETERS{
 		Version: 2, // ENABLE_TRACE_PARAMETERS_VERSION_2
@@ -352,7 +348,7 @@ func (s *Session) processEvents(callbackContextKey uintptr) error {
 	// Ref: https://docs.microsoft.com/en-us/windows/win32/api/evntrace/nf-evntrace-opentracew
 	traceHandle := C.OpenTraceHelper(
 		(C.LPWSTR)(unsafe.Pointer(&s.etwSessionName[0])),
-		(C.PVOID)(callbackContextKey),
+		(C.UINT64)(callbackContextKey),
 	)
 	if C.INVALID_PROCESSTRACE_HANDLE == traceHandle {
 		return fmt.Errorf("OpenTraceW failed; %w", windows.GetLastError())
