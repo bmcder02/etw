@@ -109,7 +109,7 @@ func (self *Session) Process(cb EventCallback) error {
 	self.mu.Lock()
 	self.callback = cb
 	hSession := self.hSession
-	config := []SessionOptions{}
+	config := make([]SessionOptions, len(self.config))
 	copy(config, self.config)
 	self.mu.Unlock()
 
